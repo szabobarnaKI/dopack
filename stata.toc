@@ -1,0 +1,4 @@
+v 3
+d Stata command dopack, by Barna Szabo (Karolinska Institutet)
+d https://github.com/szabobarnaKI/dopack
+p dopack Collect every user-written file needed to run a do-file or an ado-command

@@ -1,0 +1,25 @@
+v 3
+d 'DOPACK': collect every user-written file needed to run a do-file or an ado-command
+d
+d dopack reads a main do-file (or an ado-file) statically, without running it,
+d and follows the code that would run: do-files called with do, run and include,
+d user-written commands and their help and companion files, and changes of the
+d working directory and the ado-path. All files that are not part of the Stata
+d installation are copied to an empty folder, together with a readme.md that
+d describes the purpose of the code and how to run it.
+d
+d Requires: Stata version 16
+d
+d KW: reproducibility
+d KW: replication package
+d KW: do-file
+d KW: ado-file
+d KW: dependencies
+d
+d Author: Barna Szabo, Karolinska Institutet
+d Support: https://github.com/szabobarnaKI/dopack
+d
+d Distribution-Date: 20261124
+d
+f dopack.ado
+f dopack.sthlp
