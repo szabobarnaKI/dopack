@@ -32,11 +32,14 @@ dopack using "C:/projects/study/master.do", to("C:/share/study_code") ///
 
 * package a single user-written command with everything it needs
 dopack using "C:/ado/personal/mycmd.ado", to("C:/share/mycmd")
+
+* an ado-file named without a path: working directory first, then the ado-path
+dopack using mycmd.ado, to("C:/share/mycmd")
 ```
 
 ## Limitations
 
-The code is read, not run. Macros, `foreach`/`forvalues` loops, `=` expressions and extended macro functions are resolved where possible (expressions are evaluated in an empty frame); paths that depend on data in memory or on results of estimation commands stay unresolved and are reported as warnings. Both branches of `if`/`else` are followed. Abbreviations of built-in commands may appear in the list of commands that were not found.
+The code is read, not run. Macros, `foreach`/`forvalues` loops, `=` expressions and extended macro functions are resolved where possible (expressions are evaluated in an empty frame); paths that depend on data in memory or on results of estimation commands stay unresolved and are reported as warnings. Both branches of `if`/`else` are followed. When a command line starts with a macro that cannot be resolved (for example `` `=cond(...,"quietly","")' mycmd ``), the word after it is also looked up. Ado-files are found along the ado-path as it is when `dopack` runs, so a command whose folder is not on the ado-path cannot be collected; commands that were not found are listed, separately for the do-files (`r(notfound)`) and for the code inside the collected ado-files (`r(notfound_ado)`). Abbreviations of built-in commands may appear in these lists.
 
 ## Author
 

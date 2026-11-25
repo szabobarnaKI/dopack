@@ -1,4 +1,4 @@
-*! version 0.1.3  21nov2026
+*! version 0.1.6  25nov2026
 *! dopack: collect every user-written file needed to run a do-file or an ado-command
 *! Static analysis (the code is never executed). Szabo B & Claude.
 program define dopack, rclass
@@ -6,7 +6,7 @@ program define dopack, rclass
     syntax using/ [, TO(string) REPLACE DRYrun PURpose(string) TItle(string) ///
         STARTdir(string) ROOT(string) MAXvisits(integer 5000)]
 
-    di as txt "dopack 0.1.3 (static analysis; the code is not run)"
+    di as txt "dopack 0.1.6 (static analysis; the code is not run)"
 
     if `"`to'"' == "" & "`dryrun'" == "" {
         di as err "option to() is required unless dryrun is specified"
@@ -18,16 +18,43 @@ program define dopack, rclass
     }
 
     * ---- locate the main file ------------------------------------------
+    * as given (relative to the working directory); without an extension
+    * name.do, then name.ado; an ado-file named without a path that is not
+    * in the working directory is then searched along the ado-path
     local mainfile `"`using'"'
+    local nopath = !strpos(`"`mainfile'"', "/") & !strpos(`"`mainfile'"', char(92)) & !strpos(`"`mainfile'"', ":")
+    local hasext = ustrregexm(`"`mainfile'"', "[.][A-Za-z0-9]+" + char(36))
+    local isado = (lower(substr(`"`mainfile'"', -4, .)) == ".ado")
+    local where ""
     capture confirm file `"`mainfile'"'
-    if _rc {
+    local rc = _rc
+    if `rc' & !`hasext' {
         capture confirm file `"`mainfile'.do"'
-        if _rc {
-            di as err `"file `mainfile' not found"'
-            exit 601
+        if !_rc {
+            local mainfile `"`mainfile'.do"'
+            local rc 0
         }
-        local mainfile `"`mainfile'.do"'
+        else {
+            local mainfile `"`mainfile'.ado"'
+            local isado 1
+            capture confirm file `"`mainfile'"'
+            local rc = _rc
+        }
     }
+    if `rc' & `isado' & `nopath' {
+        capture findfile `"`mainfile'"'
+        if !_rc {
+            local mainfile `"`r(fn)'"'
+            local where "found along the ado-path"
+            local rc 0
+        }
+    }
+    if `rc' {
+        di as err `"file `using' not found"'
+        if `isado' & `nopath' di as err "(searched in the working directory and along the ado-path)"
+        exit 601
+    }
+    if "`where'" != "" di as txt `"`using' `where': `mainfile'"'
 
     local realpwd `"`c(pwd)'"'
 
@@ -55,6 +82,16 @@ program define dopack, rclass
         di as txt "(abbreviated built-in commands also appear here; check for missing packages):"
         di as res `"  `nf'"'
     }
+    local nfado ""
+    foreach c of local dp_nfado {
+        capture quietly which `c'
+        if _rc local nfado `nfado' `c'
+    }
+    if `"`nfado'"' != "" {
+        di as txt _n "Commands called inside the collected ado-files but not found as built-in or ado-file"
+        di as txt "(may also be abbreviated built-ins, or programs defined at run time; check for missing files):"
+        di as res `"  `nfado'"'
+    }
 
     return scalar n_do      = `dp_ndo'
     return scalar n_ado     = `dp_nado'
@@ -64,6 +101,7 @@ program define dopack, rclass
     return scalar n_warn    = `dp_nwarn'
     return scalar n_copied  = `dp_ncopied'
     return local  notfound  `"`nf'"'
+    return local  notfound_ado `"`nfado'"'
     return local  adofiles  `"`dp_ados'"'
     return local  otherfiles `"`dp_others'"'
     return local  dofiles   `"`dp_dofiles'"'
@@ -81,7 +119,7 @@ struct dp_st {
     string scalar cwd, sysstata, home, curraw, startdir, mainado
     string rowvector apath
     transmorphic scalar sysdirs, globals, defined, dos, ados, oths, cache
-    transmorphic scalar notfound, trkdone, trkmap, pkgfiles, pkgname
+    transmorphic scalar notfound, notfado, trkdone, trkmap, pkgfiles, pkgname
     string colvector dolist, adolist, adopkg, othlist, othkind, stack
     string colvector cdfile, cdline, cdraw, cddir, cdstat
     string colvector wfile, wline, wmsg, nfile, nline, nmsg
@@ -112,6 +150,24 @@ string scalar dp_M1()
 string scalar dp_M2()
 {
     return(char(2))
+}
+
+// position just after the marker that starts at position 1 of s (markers can nest)
+real scalar dp_skipmark(string scalar s)
+{
+    real scalar i, d
+    string scalar ch
+
+    d = 0
+    for (i=1; i<=strlen(s); i++) {
+        ch = substr(s, i, 1)
+        if (ch == dp_M1()) d++
+        if (ch == dp_M2()) {
+            d--
+            if (d == 0) return(i + 1)
+        }
+    }
+    return(strlen(s) + 1)
 }
 
 string scalar dp_show(string scalar s)
@@ -240,18 +296,27 @@ string rowvector dp_toklist(string scalar s)
     return(r)
 }
 
-// position of the first ch outside quotes and brackets (0 if none)
+// position of the first ch outside quotes, brackets and unresolved-macro markers (0 if none)
 real scalar dp_topchar(string scalar s, string scalar ch)
 {
     string scalar cc, c2, Q, B, A
-    real scalar i, n, inq, cq, dep
+    real scalar i, n, inq, cq, dep, mk
 
     Q = dp_Q(); B = dp_B(); A = dp_A()
     n = strlen(s)
-    inq = 0; cq = 0; dep = 0
+    inq = 0; cq = 0; dep = 0; mk = 0
     for (i=1; i<=n; i++) {
         cc = substr(s, i, 1)
         c2 = substr(s, i, 2)
+        if (cc == dp_M1()) {
+            mk++
+            continue
+        }
+        if (cc == dp_M2()) {
+            if (mk > 0) mk--
+            continue
+        }
+        if (mk > 0) continue
         if (inq) {
             if (cc == Q) inq = 0
             continue
@@ -874,7 +939,7 @@ string rowvector dp_adodirs(struct dp_st scalar S)
 
     r = J(1, 0, "")
     for (i=1; i<=cols(S.apath); i++) {
-        e = strtrim(S.apath[i])
+        e = dp_unq(strtrim(S.apath[i]))
         if (e == "") continue
         u = strupper(e)
         if (asarray_contains(S.sysdirs, u)) d = asarray(S.sysdirs, u)
@@ -1028,6 +1093,7 @@ void dp_command(struct dp_st scalar S, string scalar w, real scalar ln, string s
     if (p == "SYS") return
     if (p == "") {
         if (mode == 0 & !asarray_contains(S.notfound, w)) asarray(S.notfound, w, file + ":" + strofreal(ln))
+        if (mode == 1 & !asarray_contains(S.notfado, w)) asarray(S.notfado, w, file + ":" + strofreal(ln))
         return
     }
     dp_addado(S, p, w)
@@ -1289,15 +1355,24 @@ void dp_scheme(struct dp_st scalar S, string scalar nm)
 void dp_iftail(struct dp_st scalar S, string scalar s, real scalar ln, string scalar file, transmorphic scalar L, real scalar mode, real scalar depth)
 {
     string scalar ch, c2, t, Q, B, A, re
-    real scalar i, n, inq, cq, dep
+    real scalar i, n, inq, cq, dep, mk
 
     Q = dp_Q(); B = dp_B(); A = dp_A()
     re = "^((cap|capt|captu|captur|capture|qui|quie|quiet|quietl|quietly|n|no|noi|nois|noisi|noisil|noisily)\s+)*(do|run|include|cd|chdir)\s"
     n = strlen(s)
-    inq = 0; cq = 0; dep = 0
+    inq = 0; cq = 0; dep = 0; mk = 0
     for (i=3; i<=n; i++) {
         ch = substr(s, i, 1)
         c2 = substr(s, i, 2)
+        if (ch == dp_M1()) {
+            mk++
+            continue
+        }
+        if (ch == dp_M2()) {
+            if (mk > 0) mk--
+            continue
+        }
+        if (mk > 0) continue
         if (inq) {
             if (ch == Q) inq = 0
             continue
@@ -1350,6 +1425,9 @@ void dp_cmd2(struct dp_st scalar S, string scalar s0, real scalar ln, string sca
             dp_warn(S, file, ln, "command name comes from an unresolved macro: " + dp_show(s))
             S.nunres = S.nunres + 1
         }
+        // the macro may be a prefix (e.g. quietly or nothing): probe the next word
+        t = substr(s, dp_skipmark(s), .)
+        if (ustrregexm(t, "^ +([A-Za-z_][A-Za-z0-9_]*)( |,|" + char(36) + ")")) dp_command(S, ustrregexs(1), ln, file, L, 2)
         return
     }
     if (!ustrregexm(s, "^([A-Za-z_][A-Za-z0-9_]*)")) return
@@ -1643,6 +1721,7 @@ void dp_init(struct dp_st scalar S)
     cw = ("stata", "base", "site", "plus", "personal", "oldplace")
     for (i=1; i<=cols(cw); i++) asarray(S.sysdirs, strupper(cw[i]), dp_norm(c("sysdir_" + cw[i])))
     S.apath = dp_split(c("adopath"), ";")
+    for (i=1; i<=cols(S.apath); i++) S.apath[i] = dp_unq(strtrim(S.apath[i]))
     rc = _stata("local __dpv : env USERPROFILE", 1, 1)
     h = st_local("__dpv")
     if (h == "") {
@@ -1657,6 +1736,7 @@ void dp_init(struct dp_st scalar S)
     S.oths = asarray_create()
     S.cache = asarray_create()
     S.notfound = asarray_create()
+    S.notfado = asarray_create()
     S.trkdone = asarray_create()
     S.trkmap = asarray_create()
     S.pkgfiles = asarray_create()
@@ -1902,6 +1982,11 @@ void dp_finish(struct dp_st scalar S, string scalar mainf, string scalar realpwd
     st_local("dp_ados", afl)
     st_local("dp_others", ofl)
     st_local("dp_nf", strtrim(nfl))
+    keys = asarray_keys(S.notfado)
+    if (rows(keys) > 1) keys = sort(keys, 1)
+    nfl = ""
+    for (i=1; i<=rows(keys); i++) nfl = nfl + " " + keys[i]
+    st_local("dp_nfado", strtrim(nfl))
     st_local("dp_root", root)
     st_local("dp_startdir", S.startdir)
     st_local("dp_main", mainf)
@@ -2008,7 +2093,7 @@ void dp_finish(struct dp_st scalar S, string scalar mainf, string scalar realpwd
         }
         R = R \ ""
     }
-    R = R \ ("_Assembled by dopack 0.1.3 on " + c("current_date") + " with Stata " + strofreal(c("stata_version")) + " by static reading of the code._")
+    R = R \ ("_Assembled by dopack 0.1.6 on " + c("current_date") + " with Stata " + strofreal(c("stata_version")) + " by static reading of the code._")
     dp_writelines(tgt + "/readme.md", R)
     ncop++
 

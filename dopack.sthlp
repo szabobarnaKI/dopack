@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.1.0  21nov2026}{...}
+{* *! version 0.1.6  25nov2026}{...}
 {title:Title}
 
 {phang}
@@ -15,8 +15,12 @@
 {cmd:dopack} {cmd:using} {it:filename}{cmd:,} {opt dry:run} [{it:options}]
 
 {pstd}
-{it:filename} is the main do-file, or an ado-file. If {it:filename} has no
-extension and does not exist, {cmd:.do} is added.
+{it:filename} is the main do-file, or an ado-file. A relative
+{it:filename} is taken from the working directory. If {it:filename} has no
+extension and does not exist, {cmd:.do} and then {cmd:.ado} are added. An
+ado-file named without a path (for example {cmd:mycmd.ado} or {cmd:mycmd})
+that is not in the working directory is searched along the ado-path, as
+{cmd:findfile} does.
 
 {synoptset 22}{...}
 {synopthdr}
@@ -97,12 +101,27 @@ Both branches of {cmd:if}/{cmd:else} are followed, and loop bodies whose
 values cannot be determined are read once. A do-file called with a path
 that cannot be determined is reported as a warning; such files must be
 added by hand. Commands inside {cmd:program define} blocks are collected,
-but {cmd:cd} inside a program definition is not applied.
+but {cmd:cd} inside a program definition is not applied. Text blocks of
+{cmd:putdocx}/{cmd:putpdf textblock}, {cmd:input} data and
+{cmd:mata:}/{cmd:python:}/{cmd:java:} blocks are skipped.
+
+{pstd}
+When a command line starts with a macro that cannot be resolved, such as
+{cmd:`=cond(...,"quietly","")' mycmd ...}, the word after the macro is also
+looked up and collected if it is a user-written ado-file.
+
+{pstd}
+Ado-files are searched along the ado-path at the time {cmd:dopack} runs
+(including folders added with {cmd:adopath}, also folders whose names
+contain blanks) and, for an ado-file given as input, in its own folder.
+A command whose ado-file is not on the ado-path when {cmd:dopack} runs
+cannot be collected; it is listed as not found.
 
 {pstd}
 Command names that are neither built-in nor found as ado-files are listed
-at the end; abbreviations of built-in commands (for example {cmd:gen}) also
-appear there.
+at the end, separately for the do-files and for the code inside the
+collected ado-files; abbreviations of built-in commands (for example
+{cmd:gen}) also appear there.
 
 
 {title:Stored results}
@@ -128,7 +147,8 @@ appear there.
 {synopt:{cmd:r(dofiles)}}do-files, relative to the root{p_end}
 {synopt:{cmd:r(adofiles)}}names of the ado-files{p_end}
 {synopt:{cmd:r(otherfiles)}}names of the other files{p_end}
-{synopt:{cmd:r(notfound)}}commands found neither as built-in nor as ado-file{p_end}
+{synopt:{cmd:r(notfound)}}commands in the do-files found neither as built-in nor as ado-file{p_end}
+{synopt:{cmd:r(notfound_ado)}}the same for commands called inside the collected ado-files{p_end}
 
 
 {title:Examples}
@@ -137,10 +157,23 @@ appear there.
 {phang2}{cmd:. dopack using "C:/projects/study/master.do", to("C:/share/study_code") purpose("Main analyses of the study.")}{p_end}
 {phang2}{cmd:. dopack using master.do, to(../package) replace startdir(C:/projects/study)}{p_end}
 {phang2}{cmd:. dopack using "C:/ado/personal/mycmd.ado", to("C:/share/mycmd")}{p_end}
+{phang2}{cmd:. dopack using mycmd.ado, to("C:/share/mycmd")}{space 2}(working directory first, then the ado-path){p_end}
+
+
+{title:Requirements}
+
+{pstd}
+Stata 16 or later (frames are used).
+
+
+{title:Installation}
+
+{phang2}{cmd:. net install dopack, from("https://raw.githubusercontent.com/szabobarnaKI/dopack/main/") replace}{p_end}
 
 
 {title:Author}
 
 {pstd}
-Barna Szabo, Karolinska Institutet (written with Claude).
+Barna Szabo, Karolinska Institutet (written with Claude).{break}
+Source and issues: {browse "https://github.com/szabobarnaKI/dopack"}
 {p_end}
