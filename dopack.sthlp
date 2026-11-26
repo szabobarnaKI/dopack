@@ -1,5 +1,5 @@
 {smcl}
-{* *! version 0.1.6  25nov2026}{...}
+{* *! version 0.2.1  26nov2026}{...}
 {title:Title}
 
 {phang}
@@ -33,6 +33,7 @@ that is not in the working directory is searched along the ado-path, as
 {synopt:{opt start:dir(folder)}}working directory when the main do-file starts; default is the folder of the main file{p_end}
 {synopt:{opt root(folder)}}top folder of the copied do-file tree; default is the deepest folder that holds all do-files{p_end}
 {synopt:{opt max:visits(#)}}stop after # do-file visits; default 5000{p_end}
+{synopt:{opt nomata:libs}}do not look up the libraries of the Mata functions the code calls{p_end}
 {synoptline}
 
 
@@ -58,13 +59,44 @@ recursively, with their help files ({cmd:.sthlp}, {cmd:.hlp}); these go to
 the subfolder {cmd:ado} ({cmd:_ado} if the do-file tree already has a folder
 {cmd:ado});{p_end}
 {p 8 12 2}- companion files: files with the same name as an ado-file
-({cmd:.ihlp}, {cmd:.dlg}, {cmd:.mata}, {cmd:.class}, {cmd:.mo}),
-{cmd:l}{it:name}{cmd:.mlib}, files located with {cmd:findfile}, files run or
-included by ado-files, {cmd:predict}/{cmd:estat} subcommands named in
-{cmd:ereturn local predict} and {cmd:ereturn local estat_cmd}, graph schemes
-named in {cmd:set scheme} or {cmd:scheme()}, and, for packages installed
-with {cmd:net install} or {cmd:ssc install}, every file of the package as
-listed in {cmd:stata.trk}.{p_end}
+({cmd:.ihlp}, {cmd:.dlg}, {cmd:.idlg}, {cmd:.mata}, {cmd:.class}, {cmd:.mo},
+{cmd:.plugin}), {cmd:l}{it:name}{cmd:.mlib}, the dialog {it:name}{cmd:.dlg}
+also when it lies in another folder of the ado-path, files located with
+{cmd:findfile}, files run or included by ado-files (do-files run by an
+ado-file are read like the ado-file), {cmd:predict}/{cmd:estat} subcommands
+named in {cmd:ereturn local predict} and {cmd:ereturn local estat_cmd}, and,
+for packages installed with {cmd:net install} or {cmd:ssc install}, every
+file of the package as listed in {cmd:stata.trk};{p_end}
+{p 8 12 2}- dialog files: dialogs opened with {cmd:db} {it:name},
+{cmd:view dialog} {it:name} or a {cmd:window menu} item; inside dialog files,
+{cmd:INCLUDE} files ({cmd:.idlg}), child dialogs ({cmd:create CHILD}) and the
+user-written command the dialog runs (first word of a {cmd:put} string);{p_end}
+{p 8 12 2}- help files: {cmd:INCLUDE help} files ({cmd:.ihlp}), and help files
+and dialogs of the same command family linked from a help file (in the same
+folder, with a name that starts with the name of the linking help file, such
+as {it:mycmd}{cmd:_postestimation.sthlp});{p_end}
+{p 8 12 2}- class files ({cmd:.class}): classes created with
+{cmd:.}{it:classname}{cmd:.new}, member variables of a class type and parent
+classes named in {cmd:inherit()}, followed recursively; the member programs
+in a class file are read like an ado-file;{p_end}
+{p 8 12 2}- Mata: the functions called in {cmd:mata:} blocks, {cmd:mata:}
+lines and {cmd:.mata} files; a function stored in {it:name}{cmd:.mo} is
+collected, and the library ({cmd:.mlib}) of every other function is looked
+up with {cmd:mata which} (see below);{p_end}
+{p 8 12 2}- plugins ({cmd:program} {it:name}{cmd:, plugin}
+[{cmd:using(}{it:file}{cmd:)}]), Java archives named in {cmd:javacall ..., jars()},
+Python scripts run with {cmd:python script} and Python modules imported in
+{cmd:python:} code (when the module {it:name}{cmd:.py} lies on the ado-path),
+business calendars ({cmd:%tb}{it:name} formats, {cmd:bcal load}), graph
+recordings ({cmd:play()}, {cmd:graph play}), graph schemes named in
+{cmd:set scheme} or {cmd:scheme()} and the schemes they {cmd:#include}, and
+source files of {cmd:dyndoc}, {cmd:dyntext} and {cmd:markstat} (the Stata code
+inside them is not followed).{p_end}
+
+{pstd}
+Files used by the do-files and found relative to the working directory (a
+Python script, a business calendar, a {cmd:dyndoc} source, ...) keep their
+place in the folder tree; all other files go to the subfolder {cmd:ado}.
 
 {pstd}
 Data files are not collected.
@@ -102,8 +134,19 @@ values cannot be determined are read once. A do-file called with a path
 that cannot be determined is reported as a warning; such files must be
 added by hand. Commands inside {cmd:program define} blocks are collected,
 but {cmd:cd} inside a program definition is not applied. Text blocks of
-{cmd:putdocx}/{cmd:putpdf textblock}, {cmd:input} data and
-{cmd:mata:}/{cmd:python:}/{cmd:java:} blocks are skipped.
+{cmd:putdocx}/{cmd:putpdf textblock}, {cmd:input} data and {cmd:java:} blocks
+are skipped; {cmd:mata:} blocks are read only for the functions they call and
+{cmd:python:} blocks only for the modules they import.
+
+{pstd}
+{ul:Mata libraries.} Which library holds a Mata function cannot be read from
+the {cmd:.mlib} file, so {cmd:dopack} asks Stata: for each function that the
+code calls but does not define, it runs {cmd:mata which}, and collects the
+library if it is not part of Stata. The answers are printed on screen
+(built-in functions are skipped). Only libraries indexed in the current
+session ({cmd:mata mlib index}) are found. When {cmd:dopack} is run
+{cmd:quietly}, the answers cannot be read and a warning says so; option
+{opt nomatalibs} skips this step.
 
 {pstd}
 When a command line starts with a macro that cannot be resolved, such as
@@ -133,7 +176,8 @@ collected ado-files; abbreviations of built-in commands (for example
 {p2col 5 16 20 2: Scalars}{p_end}
 {synopt:{cmd:r(n_do)}}number of do-files{p_end}
 {synopt:{cmd:r(n_ado)}}number of ado-files{p_end}
-{synopt:{cmd:r(n_other)}}number of other files (help, companions){p_end}
+{synopt:{cmd:r(n_other)}}number of other files in the {cmd:ado} folder (help, dialog, class, Mata and other companion files){p_end}
+{synopt:{cmd:r(n_script)}}number of other files used by the do-files and kept in the folder tree{p_end}
 {synopt:{cmd:r(n_cd)}}number of working-directory changes{p_end}
 {synopt:{cmd:r(n_unres)}}number of items that could not be resolved{p_end}
 {synopt:{cmd:r(n_warn)}}number of warnings{p_end}
@@ -147,6 +191,7 @@ collected ado-files; abbreviations of built-in commands (for example
 {synopt:{cmd:r(dofiles)}}do-files, relative to the root{p_end}
 {synopt:{cmd:r(adofiles)}}names of the ado-files{p_end}
 {synopt:{cmd:r(otherfiles)}}names of the other files{p_end}
+{synopt:{cmd:r(scriptfiles)}}files used by the do-files and kept in the folder tree, relative to the root{p_end}
 {synopt:{cmd:r(notfound)}}commands in the do-files found neither as built-in nor as ado-file{p_end}
 {synopt:{cmd:r(notfound_ado)}}the same for commands called inside the collected ado-files{p_end}
 
